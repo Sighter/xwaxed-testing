@@ -19,6 +19,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cues.h"
 #include "debug.h"
@@ -102,4 +103,103 @@ double cues_next(const struct cues *q, double current)
     }
 
     return r;
+}
+
+
+/*
+ * Initialize Cuepoints and read the from *.cue file if present
+ * xwaxed
+ */
+void cues_load_from_file(struct cues *q, char const* pathname)
+{
+    char* cuepath = replace_path_ext(pathname);
+    if (cuepath == NULL)
+        return;
+
+    FILE* f = fopen(cuepath, "r");
+
+    int i;
+    //for (i = 0; i < MAX_CUEPOINTS; i++)
+    //    record->cuepoints[i] = 0.0;
+
+    if (f == NULL) {
+        free(cuepath);
+        return;
+    }
+
+    i = 0;
+    while (fscanf(f, "%lf", &(q->position[i])) != EOF)
+        i++;
+
+    fclose(f);
+    free(cuepath);
+}
+
+/*
+ * Write Cuepoints to *.cue file if at least one cuepoint is set
+ * xwaxed
+ */
+
+void cues_save_to_file(struct cues *q, char const* pathname)
+{
+    if (q->position[0] == 0.0)
+        return;
+
+    
+    
+    fprintf(stdout, "Saving Loc: %s\n", pathname);
+
+    char* cuepath = replace_path_ext(pathname);
+    if (cuepath == NULL)
+        return;
+    fprintf(stdout, "Saving Loc: %s\n", cuepath);
+
+    FILE* f = fopen(cuepath, "w");
+    if (f == NULL) {
+        free(cuepath);
+        return;
+    }
+
+    int i;
+    for (i = 0; i < MAX_CUES; i++)
+        fprintf(f, "%lf\n", q->position[i]);
+
+    fclose(f);
+    free(cuepath);
+}
+
+/*
+ * xwaxed
+ * Replace normal extension on given path, with ".cue"
+ * 
+ * Return: pointer to the new pathname with cue extension
+ *         NULL on allocation failure
+ *
+ * Beware: Free the allocated memory!
+ */
+
+char* replace_path_ext(char const* pathname)
+{
+        char* ext = ".cue";
+
+        char* tempstring = malloc(strlen(pathname) + 1);
+        if (tempstring == NULL) {
+            perror("malloc");
+            return NULL;
+        }
+
+        strcpy(tempstring, pathname);
+        strcpy(strrchr(tempstring, '.'), "");
+
+        char* cuepath = malloc(strlen(tempstring) + strlen(ext) + 1);
+        if (cuepath == NULL) {
+            perror("malloc");
+            return NULL;
+        }
+
+        strcpy(cuepath, tempstring);
+        strncat(cuepath, ext, strlen(ext));
+        free(tempstring);
+
+        return cuepath;
 }
