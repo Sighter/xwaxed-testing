@@ -110,6 +110,7 @@
 #define FUNC_LOAD 0
 #define FUNC_RECUE 1
 #define FUNC_TIMECODE 2
+#define FUNC_SAVECUE 3
 
 /* Types of SDL_USEREVENT */
 
@@ -919,9 +920,9 @@ static void draw_overview(SDL_Surface *surface, const struct rect *rect,
  */
 
 static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
-                         struct track *tr, int position, int scale)
+                         struct track *tr, int position, int scale, struct cues const* q)
 {
-    int x, y, w, h, c;
+    int x, y, w, h, c, k;
     size_t bytes_per_pixel, pitch;
     Uint8 *pixels;
 
@@ -934,6 +935,17 @@ static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
     bytes_per_pixel = surface->format->BytesPerPixel;
     pitch = surface->pitch;
 
+    /* xwaxed: calculate the sample position for all cue points */
+    unsigned int cue_sps[MAX_CUES];
+
+    for (k = 0; k < MAX_CUES; k++) {
+        fprintf(stderr, "cue %i time: %f -- ", k, cues_get(q, k));
+        cue_sps[k] = cues_get(q, k) * tr->rate;
+        fprintf(stderr, "cue %i sp: %u\n", k, cue_sps[k]);
+    }
+    fprintf(stderr, "scale: %i\n", scale);
+    
+
     /* Draw in columns. This may seem like a performance hit,
      * but oprofile shows it makes no difference */
 
@@ -941,11 +953,14 @@ static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
         int r, sp, height, fade;
         Uint8 *p;
         SDL_Color col;
+        bool cue_in_col = false;
 
         /* Work out the meter height in pixels for this column */
 
         sp = position - (position % (1 << scale))
             + ((c - w / 2) << scale);
+
+        fprintf(stderr, "current sp: %i\n", sp);
 
         if (sp < tr->length && sp > 0)
             height = track_get_ppm(tr, sp) * h / 256;
@@ -954,7 +969,17 @@ static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
 
         /* Select the appropriate colour */
 
+        /* check if there is a cuepoint in the column */
+        for (k = 0; k < MAX_CUES; k++) {
+            if (cue_sps[k] > sp && cue_sps[k] < sp + (1 << scale))
+                cue_in_col = true;
+        }
+
         if (c == w / 2) {
+            col = needle_col;
+            fade = 1;
+        } else if (cue_in_col == true) {
+            fprintf(stderr, "setting cue col\n");
             col = needle_col;
             fade = 1;
         } else {
@@ -990,7 +1015,7 @@ static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
  */
 
 static void draw_meters(SDL_Surface *surface, const struct rect *rect,
-                        struct track *tr, int position, int scale)
+                        struct track *tr, int position, int scale, struct cues const* q)
 {
     struct rect overview, closeup;
 
@@ -1001,7 +1026,7 @@ static void draw_meters(SDL_Surface *surface, const struct rect *rect,
     else
         closeup = *rect;
 
-    draw_closeup(surface, &closeup, tr, position, scale);
+    draw_closeup(surface, &closeup, tr, position, scale, q);
 }
 
 /*
@@ -1108,7 +1133,7 @@ static void draw_deck(SDL_Surface *surface, const struct rect *rect,
     else
         draw_deck_status(surface, &status, deck);
 
-    draw_meters(surface, &meters, t, position, meter_scale);
+    draw_meters(surface, &meters, t, position, meter_scale, &(deck->cues));
 }
 
 /*
@@ -1509,6 +1534,11 @@ static bool handle_key(SDLKey key, SDLMod mod)
                     (void)player_toggle_timecode_control(pl);
                 }
                 break;
+
+            case FUNC_SAVECUE:
+                deck_save_cue(de);
+                break;
+
             }
         }
     }
