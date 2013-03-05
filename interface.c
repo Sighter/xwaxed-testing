@@ -151,6 +151,7 @@ static SDL_Color background_col = {0, 0, 0, 255},
     selected_col = {0, 48, 64, 255},
     detail_col = {128, 128, 128, 255},
     needle_col = {255, 255, 255, 255},
+    cue_needle_col = {28, 255, 34, 255},
     artist_col = {16, 64, 0, 255},
     bpm_col = {64, 16, 0, 255};
 
@@ -838,10 +839,10 @@ static void draw_deck_clocks(SDL_Surface *surface, const struct rect *rect,
  */
 
 static void draw_overview(SDL_Surface *surface, const struct rect *rect,
-                          struct track *tr, int position)
+                          struct track *tr, int position, struct cues const* q)
 {
-    int x, y, w, h, r, c, sp, fade, bytes_per_pixel, pitch, height,
-        current_position;
+    int x, y, w, h, r, c, sp, sp_next, fade, bytes_per_pixel, pitch, height,
+        current_position, k;
     Uint8 *pixels, *p;
     SDL_Color col;
 
@@ -854,21 +855,36 @@ static void draw_overview(SDL_Surface *surface, const struct rect *rect,
     bytes_per_pixel = surface->format->BytesPerPixel;
     pitch = surface->pitch;
 
+    /* xwaxed: calculate the sample position for all cue points */
+    unsigned long cue_sps[MAX_CUES];
+
+    for (k = 0; k < MAX_CUES; k++) {
+        cue_sps[k] = cues_get(q, k) * tr->rate;
+    }
+
     if (tr->length)
         current_position = (long long)position * w / tr->length;
     else
         current_position = 0;
 
     for (c = 0; c < w; c++) {
+        bool cue_in_col = false;
 
         /* Collect the correct meter value for this column */
 
         sp = (long long)tr->length * c / w;
+        sp_next = (long long)tr->length * (c + 1)/ w;
 
         if (sp < tr->length) /* account for rounding */
             height = track_get_overview(tr, sp) * h / 256;
         else
             height = 0;
+
+        /* check if there is a cuepoint in the column */
+        for (k = 0; k < MAX_CUES; k++) {
+            if (cue_sps[k] >= sp && cue_sps[k] <= sp_next)
+                cue_in_col = true;
+        }
 
         /* Choose a base colour to display in */
 
@@ -877,6 +893,9 @@ static void draw_overview(SDL_Surface *surface, const struct rect *rect,
             fade = 0;
         } else if (c == current_position) {
             col = needle_col;
+            fade = 1;
+        } else if (cue_in_col) {
+            col = cue_needle_col;
             fade = 1;
         } else if (position > tr->length - tr->rate * METER_WARNING_TIME) {
             col = warn_col;
@@ -936,14 +955,11 @@ static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
     pitch = surface->pitch;
 
     /* xwaxed: calculate the sample position for all cue points */
-    unsigned int cue_sps[MAX_CUES];
+    unsigned long cue_sps[MAX_CUES];
 
     for (k = 0; k < MAX_CUES; k++) {
-        fprintf(stderr, "cue %i time: %f -- ", k, cues_get(q, k));
         cue_sps[k] = cues_get(q, k) * tr->rate;
-        fprintf(stderr, "cue %i sp: %u\n", k, cue_sps[k]);
     }
-    fprintf(stderr, "scale: %i\n", scale);
     
 
     /* Draw in columns. This may seem like a performance hit,
@@ -959,8 +975,6 @@ static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
 
         sp = position - (position % (1 << scale))
             + ((c - w / 2) << scale);
-
-        fprintf(stderr, "current sp: %i\n", sp);
 
         if (sp < tr->length && sp > 0)
             height = track_get_ppm(tr, sp) * h / 256;
@@ -979,8 +993,7 @@ static void draw_closeup(SDL_Surface *surface, const struct rect *rect,
             col = needle_col;
             fade = 1;
         } else if (cue_in_col == true) {
-            fprintf(stderr, "setting cue col\n");
-            col = needle_col;
+            col = cue_needle_col;
             fade = 1;
         } else {
             col = elapsed_col;
@@ -1022,7 +1035,7 @@ static void draw_meters(SDL_Surface *surface, const struct rect *rect,
     split_top(rect, &overview, &closeup, OVERVIEW_HEIGHT, SPACER);
 
     if (closeup.h > OVERVIEW_HEIGHT)
-        draw_overview(surface, &overview, tr, position);
+        draw_overview(surface, &overview, tr, position, q);
     else
         closeup = *rect;
 
